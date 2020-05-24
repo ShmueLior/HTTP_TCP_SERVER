@@ -1,4 +1,6 @@
 #define _CRT_SECURE_NO_WARNINGS
+#define _WINSOCK_DEPRECATED_NO_WARNINGS
+
 #include <iostream>
 using namespace std;
 #pragma comment(lib, "Ws2_32.lib")
@@ -27,15 +29,13 @@ const int RECEIVE = 2;
 const int IDLE = 3;
 const int SEND = 4;
 
-//TBD - might need to change the delete
 const int OPTIONS = 1;
 const int GET = 2;
 const int HEAD = 3;
 const int PUT = 4;
 const int DELETE_METHOD = 5;
 const int TRACE = 6;
-const int EXIT = 7;
-//const int DELETED_ERROR = -1;
+const int NOT_IMPL = 7;
 
 
 bool addSocket(SOCKET id, int what);
@@ -43,7 +43,12 @@ void removeSocket(int index);
 void acceptConnection(int index);
 void receiveMessage(int index);
 void sendMessage(int index);
-//TBD might need to add here more functions
+
+void optionsMethod(char buffer[]);
+void getHeadMethods(char buffer[], int index);
+void matchTypeToFile(char* fileName, char* buffer);
+void putMethod(char buffer[], int index);
+void deleteMethod(char buffer[], int index);
 
 struct SocketState sockets[MAX_SOCKETS] = { 0 };
 int socketsCount = 0;
@@ -108,7 +113,6 @@ void main()
 	addSocket(listenSocket, LISTEN);
 	cout << "HTTP Server: Waiting for client connections" << endl;
 
-	// Accept connections and handles them one by one.
 	while (true)
 	{
 		
@@ -175,7 +179,7 @@ void main()
 				switch (sockets[i].send)
 				{
 				case SEND:
-					sendMessage(i); //TBD - might need to change
+					sendMessage(i);
 					break;
 				}
 			}
@@ -230,7 +234,7 @@ void acceptConnection(int index)
 	cout << "HTTP Server: Client " << inet_ntoa(from.sin_addr) << ":" << ntohs(from.sin_port) << " is connected." << endl;
 
 	// Set the socket to be in non-blocking mode.
-	//TBD - might need to change - might need to add to addsocket
+	//TBD - might need to change - might need to add to addsocket as the comment from class
 	unsigned long flag = 1;
 	if (ioctlsocket(msgSocket, FIONBIO, &flag) != 0)
 	{
@@ -250,6 +254,7 @@ void receiveMessage(int index)
 	SOCKET msgSocket = sockets[index].id;
 
 	int len = sockets[index].len;
+	//len = 0;
 	int bytesRecv = recv(msgSocket, &sockets[index].buffer[len], sizeof(sockets[index].buffer) - len, 0);
 
 	if (SOCKET_ERROR == bytesRecv)
@@ -326,7 +331,13 @@ void receiveMessage(int index)
 				sockets[index].buffer[sockets[index].len] = '\0';
 				return;
 			}
-			//TBD - might need to add an option for non-implemented requests method
+			else //not implemented
+			{
+				//TBD - not sure if need to change the buffer as above
+				sockets[index].send = SEND;
+				sockets[index].sendSubType = NOT_IMPL;
+				return;
+			}
 		}
 	}
 
@@ -336,15 +347,17 @@ void sendMessage(int index)
 {
 	int bytesSent = 0;
 	char sendBuff[MAX_SIZE];
+	char strTmp[20]; //TBD - new added here
 
 	SOCKET msgSocket = sockets[index].id;
+
 	if (sockets[index].sendSubType == OPTIONS)
 	{
-		optionMethod(sendBuff, index);
+		optionsMethod(sendBuff);
 	}
 	else if (sockets[index].sendSubType == GET || sockets[index].sendSubType == HEAD)
 	{
-		getOrHeadMethod(sendBuff, index);
+		getHeadMethods(sendBuff, index);
 	}
 	else if (sockets[index].sendSubType == PUT)
 	{
@@ -356,10 +369,20 @@ void sendMessage(int index)
 	}
 	else if (sockets[index].sendSubType == TRACE)
 	{
-		strcpy(sendBuff, "HTTP/1.1 200 OK \r\n");
-		strcat(sendBuff, "Content-Length: 0\r\nContent-Type: text/html\r\n\r\n");
+		strcpy(sendBuff, "HTTP/1.1 200 OK\r\n");
+		strcat(sendBuff, "Content-Type: message/http\r\nContent-Length: ");
+		_itoa(strlen(sockets[index].buffer), strTmp, 10); //TBD - length of request to string
+		strcat(sendBuff, strTmp);
+		strcat(sendBuff, "\r\n\r\n");
 		strcat(sendBuff, sockets[index].buffer);
 	}
+	else if (sockets[index].sendSubType == NOT_IMPL)//not implemented
+	{
+		cout << "HTTP Server: Error - Not Implemented\n";
+		strcpy(sendBuff, "HTTP/1.1 501 Not Implemented\r\n");
+		strcat(sendBuff, "Content-Type: text/html\r\nContent-Length: 0\r\n\r\n");
+	}
+
 
 	bytesSent = send(msgSocket, sendBuff, (int)strlen(sendBuff), 0);
 	if (SOCKET_ERROR == bytesSent)
@@ -371,4 +394,162 @@ void sendMessage(int index)
 	cout << "HTTP Server: Sent: " << bytesSent << "\\" << strlen(sendBuff) << " bytes of \"" << sendBuff << "\" message.\n";
 
 	sockets[index].send = IDLE;
+	memset(sockets[index].buffer, '\0', MAX_SIZE);
+	sockets[index].len = 0;
 }
+
+void optionsMethod(char buffer[])
+{
+	strcpy(buffer, "HTTP/1.1 200 OK\r\n");
+	strcat(buffer, "Allow: OPTIONS, GET, HEAD, PUT, DELETE, TRACE\n");
+	strcat(buffer, "Content-Type: message/http\r\nContent-Length: 0\r\n\r\n");
+}
+
+void matchTypeToFile(char* fileName, char* buffer)
+{
+	char* fileType = NULL;
+
+	for (int i = strlen(fileName) - 1; i >= 0; i--)
+	{
+		if (fileName[i] == '.')
+		{
+			fileType = fileName + i;
+			break;
+		}
+	}
+
+	if (strcmp(fileType, ".html") == 0)
+	{
+		strcat(buffer, "Content-type: text/html\r\n");
+	}
+	if (strcmp(fileType, ".txt") == 0)
+	{
+		strcat(buffer, "Content-type: text/plain\r\n");
+	}
+}
+
+void getHeadMethods(char buffer[], int index)
+{
+	FILE* filePtr = NULL;
+	char* fileName;
+	char strFileSize[50];
+	int fileSize = 0, tempLen = 0;
+	char fileContentBuffer[MAX_SIZE];
+
+	fileName = sockets[index].buffer;
+	fileName = strtok(fileName, " ");
+	memmove(fileName, fileName + 1, strlen(fileName));
+
+	if (fileName != NULL)
+	{
+		filePtr = fopen(fileName, "r");
+	}
+
+	if (filePtr == NULL)
+	{
+		cout << "HTTP Server: Error at getHeadMethods().\n";
+		strcpy(buffer, "HTTP/1.1 404 Not Found\r\n");
+		strcat(buffer, "Content-Type: text/html\r\nContent-Length: 0\r\n\r\n");
+	}
+	else
+	{
+		//get size of file
+		fseek(filePtr, 0, SEEK_END);
+		fileSize = ftell(filePtr);
+		fseek(filePtr, 0, SEEK_SET);
+
+		strcpy(buffer, "HTTP/1.1 200 OK\r\n");
+		matchTypeToFile(fileName, buffer);
+
+		strcat(buffer, "Content-Length: ");
+		_itoa(fileSize, strFileSize, 10);
+		strcat(buffer, strFileSize);
+		strcat(buffer, "\r\n\r\n");
+
+		//If it is a GET req than add the file content
+		if (sockets[index].sendSubType == GET)
+		{
+			while (fgets(fileContentBuffer, MAX_SIZE, filePtr))
+			{
+				strcat(buffer, fileContentBuffer);
+			}
+		}
+
+		fclose(filePtr);
+	}
+}
+
+void putMethod(char buffer[], int index)
+{
+	FILE* filePtr = NULL;
+	char* fileName;
+	char tmpBuffer[MAX_SIZE];
+	bool isFileExist = true;
+	bool isFileCreated = true;
+	string bodyContent;
+	int indexBody;
+
+	memcpy(tmpBuffer, sockets[index].buffer, MAX_SIZE);
+	fileName = tmpBuffer;
+	fileName = strtok(fileName, " ");
+	memmove(fileName, fileName + 1, strlen(fileName));
+
+	filePtr = fopen(fileName, "r");
+	if (filePtr == NULL)
+	{
+		isFileExist = false;
+	}
+	else
+	{
+		fclose(filePtr);
+	}
+
+	filePtr = fopen(fileName, "w");
+	if (filePtr == NULL)
+	{
+		isFileCreated = false;
+		cout << "HTTP Server: Error at putMethod().\n";
+		strcpy(buffer, "HTTP/1.1 500 Internal Server Error\r\n");
+		strcat(buffer, "Content-Type: text/html\r\nContent-Length: 0\r\n\r\n");
+	}
+	else
+	{
+		//match the right header
+		if (isFileExist)
+		{
+			strcpy(buffer, "HTTP/1.1  200 OK\r\n");	
+		}
+		else
+		{
+			strcpy(buffer, "HTTP/1.1  201 Created\r\n");
+		}
+
+		strcat(buffer, "Content-Type: text/html\r\nContent-Length: 0\r\n\r\n");
+
+		bodyContent = sockets[index].buffer;
+		indexBody = bodyContent.find("\r\n\r\n");
+		fputs(&(bodyContent[indexBody + 4]), filePtr);
+	}
+	fclose(filePtr);
+}
+
+void deleteMethod(char buffer[], int index)
+{
+	char* fileName;
+	fileName = sockets[index].buffer;
+	fileName = strtok(fileName, " ");
+	memmove(fileName, fileName + 1, strlen(fileName));
+
+	if (remove(fileName) != 0)
+	{
+		cout << "HTTP Server: Error at deleteMethod().\n";
+		strcpy(buffer, "HTTP/1.1 404 Not Found\r\n");
+	}
+	else
+	{
+		strcpy(buffer, "HTTP/1.1 200 OK\r\n");
+	}
+	strcat(buffer, "Content-Type: text/html\r\nContent-Length: 0\r\n\r\n");
+}
+
+
