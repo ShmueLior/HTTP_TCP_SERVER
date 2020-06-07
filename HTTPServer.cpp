@@ -7,7 +7,6 @@ using namespace std;
 #include <winsock2.h>
 #include <string.h>
 #include <time.h>
-//TBD - might need to change includes
 
 const int MAX_SIZE = 1024;
 struct SocketState
@@ -103,7 +102,7 @@ void main()
 	}
 
 	// Listen on the Socket for incoming connections.
-	if (SOCKET_ERROR == listen(listenSocket, 5)) //TBD might need to change
+	if (SOCKET_ERROR == listen(listenSocket, 5))
 	{
 		cout << "HTTP Server: Error at listen(): " << WSAGetLastError() << endl;
 		closesocket(listenSocket);
@@ -234,7 +233,6 @@ void acceptConnection(int index)
 	cout << "HTTP Server: Client " << inet_ntoa(from.sin_addr) << ":" << ntohs(from.sin_port) << " is connected." << endl;
 
 	// Set the socket to be in non-blocking mode.
-	//TBD - might need to change - might need to add to addsocket as the comment from class
 	unsigned long flag = 1;
 	if (ioctlsocket(msgSocket, FIONBIO, &flag) != 0)
 	{
@@ -333,7 +331,6 @@ void receiveMessage(int index)
 			}
 			else //not implemented
 			{
-				//TBD - not sure if need to change the buffer as above
 				sockets[index].send = SEND;
 				sockets[index].sendSubType = NOT_IMPL;
 				return;
@@ -347,7 +344,7 @@ void sendMessage(int index)
 {
 	int bytesSent = 0;
 	char sendBuff[MAX_SIZE];
-	char strTmp[20]; //TBD - new added here
+	char strTmp[20]; 
 
 	SOCKET msgSocket = sockets[index].id;
 
@@ -371,7 +368,7 @@ void sendMessage(int index)
 	{
 		strcpy(sendBuff, "HTTP/1.1 200 OK\r\n");
 		strcat(sendBuff, "Content-Type: message/http\r\nContent-Length: ");
-		_itoa(strlen(sockets[index].buffer), strTmp, 10); //TBD - length of request to string
+		_itoa(strlen(sockets[index].buffer), strTmp, 10); 
 		strcat(sendBuff, strTmp);
 		strcat(sendBuff, "\r\n\r\n");
 		strcat(sendBuff, sockets[index].buffer);
